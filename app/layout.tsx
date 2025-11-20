@@ -1,11 +1,16 @@
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import './globals.css';
+
+export const metadata = {
+  title: 'SIPNS',
+  description: 'Sistem Informasi Pengelolaan Notifikasi Stock',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="bg-gray-100 min-h-screen">
+        {children}
+      </body>
     </html>
   );
 }
