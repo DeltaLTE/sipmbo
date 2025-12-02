@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { Textarea } from '@/app/components/ui/textarea';
+import { Search, Upload } from 'lucide-react'; // Added imports
+import { toast } from 'sonner'; // Ensure you have sonner installed, or use standard alert
 
-// Define the Product type based on your API's transformed response
+// Define the Product type
 interface Product {
   id: number;
   name: string;
@@ -15,7 +17,6 @@ interface Product {
   price: number | null;
 }
 
-// Define the type for the form data
 interface ProductFormData {
   name: string;
   category: string;
@@ -24,7 +25,6 @@ interface ProductFormData {
   price: number | string | null;
 }
 
-// Initial empty form state
 const initialFormData: ProductFormData = {
   name: '',
   category: '',
@@ -33,9 +33,6 @@ const initialFormData: ProductFormData = {
   price: '',
 };
 
-/**
- * A simple debounce function to limit API calls while typing.
- */
 function useDebounce(value: string, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -67,12 +64,15 @@ export default function ProductPage() {
 
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // File Input Ref for Import
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const modalTitle = useMemo(() => 
     currentProduct ? 'Edit Produk' : 'Tambah Produk Baru',
     [currentProduct]
   );
 
-  // --- Data Fetching Functions ---
+  // --- Data Fetching ---
 
   const fetchProducts = async (search: string = '') => {
     setIsLoading(true);
@@ -87,6 +87,7 @@ export default function ProductPage() {
       setProducts(data.data || []);
     } catch (e: any) {
       setError(e.message);
+      toast.error("Gagal memuat produk");
     } finally {
       setIsLoading(false);
     }
@@ -95,6 +96,71 @@ export default function ProductPage() {
   useEffect(() => {
     fetchProducts(debouncedSearchTerm);
   }, [debouncedSearchTerm]);
+
+  // --- CSV Import Handler ---
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      // CSV Logic: Expects "Name, Category, Notes, Points, Price"
+      const lines = text.split('\n');
+      const importData = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Skip header row
+        if (i === 0 && (line.toLowerCase().includes('name') || line.toLowerCase().includes('category'))) {
+          continue;
+        }
+
+        const parts = line.split(',');
+        if (parts.length >= 5) {
+          importData.push({
+            name: parts[0].trim(),
+            category: parts[1].trim(),
+            notes: parts[2].trim(),
+            points: parseInt(parts[3].trim()) || 0,
+            price: parseFloat(parts[4].trim()) || 0
+          });
+        }
+      }
+
+      if (importData.length === 0) {
+        toast.error("File CSV kosong atau format salah. Gunakan: Name, Category, Notes, Points, Price");
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/products/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importData),
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+          toast.success(result.message);
+          fetchProducts(debouncedSearchTerm);
+        } else {
+          toast.error(result.error || "Gagal import data");
+        }
+      } catch (error) {
+        console.error(error);
+        toast.error("Terjadi kesalahan saat import");
+      }
+    };
+
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   // --- Event Handlers ---
 
@@ -172,6 +238,7 @@ export default function ProductPage() {
         throw new Error(result.error || (currentProduct ? 'Gagal mengupdate' : 'Gagal menambahkan'));
       }
       
+      toast.success(currentProduct ? 'Produk berhasil diupdate' : 'Produk berhasil ditambahkan');
       closeModal();
       fetchProducts(debouncedSearchTerm);
 
@@ -199,6 +266,7 @@ export default function ProductPage() {
         throw new Error(result.error || 'Gagal menghapus produk');
       }
 
+      toast.success('Produk berhasil dihapus');
       setProducts(prev => prev.filter(p => p.id !== id));
 
     } catch (e: any) {
@@ -207,8 +275,6 @@ export default function ProductPage() {
       setDeletingId(null);
     }
   };
-
-  // --- Render ---
 
   return (
     <div className="max-w-7xl mx-auto px-8 py-6">
@@ -225,13 +291,28 @@ export default function ProductPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-4 py-2 w-56 bg-white border-none rounded text-sm"
             />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           </div>
+
+          {/* Import Button */}
+          <input 
+            type="file" 
+            accept=".csv"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            className="bg-gray-700 hover:bg-gray-900 text-white px-5 py-2 rounded text-sm font-medium shadow-md flex items-center gap-2"
+          >
+            <Upload size={16} />
+            Import CSV
+          </Button>
+
           <Button
             onClick={openModalForAdd}
-            className="bg-[#3eb8a3] hover:bg-[#36a392] text-white px-5 py-2 rounded text-sm font-medium shadow-md"
+            className="bg-[#4a9fd9] hover:bg-[#3a8fc9] text-white px-5 py-2 rounded text-sm font-medium shadow-md"
           >
             + Tambah Produk
           </Button>
@@ -246,7 +327,7 @@ export default function ProductPage() {
         </div>
       )}
 
-      {/* Product Table - Light gray background */}
+      {/* Product Table */}
       <div className="bg-[#e8e8e8] rounded-lg shadow-lg overflow-hidden">
         <table className="min-w-full">
           <thead>

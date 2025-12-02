@@ -1,87 +1,125 @@
 import { prisma } from "@/lib/prisma";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-// GET - Fetch all report data
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   try {
-    const { searchParams } = req.nextUrl;
-    // Get start and end dates from query, default to last 30 days
-    const endDate = searchParams.get("endDate") ? new Date(searchParams.get("endDate")!) : new Date();
-    const startDate = searchParams.get("startDate") ? new Date(searchParams.get("startDate")!) : new Date(new Date().setDate(endDate.getDate() - 30));
-
-    // --- 1. Fetch Laporan (Sales) Data ---
-    const salesReports = await prisma.laporan.findMany({
-      where: {
-        tgl_laporan: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      orderBy: {
-        tgl_laporan: 'asc',
-      },
+    // --- 1. Summary Cards Data ---
+    
+    // Revenue: Sum of all transaction totals
+    const totalRevenueAgg = await prisma.transaksi.aggregate({
+      _sum: { total_harga: true },
     });
-
-    // --- 2. Fetch Customer & Membership Data ---
-    // (This assumes you have a 'pelanggan' table as seen in your customer API)
+    
+    // Customers: Count total customers
     const totalCustomers = await prisma.pelanggan.count();
     
-    // Example: Group customers by points to create membership tiers
-    // This is an example, you might have a different way to store tiers
-    const customers = await prisma.pelanggan.findMany({
-      select: { total_poin: true }
+    // Active Promotions: Count notifications (or use your promotion logic)
+    const totalPromotions = await prisma.notifikasi.count();
+
+    // Points Redeemed: Calculate based on products sold that have a point cost
+    const pointsTransactions = await prisma.transaksi.findMany({
+      include: { produk: true },
+      where: {
+        produk: {
+          poin_pertukaran: { gt: 0 } // Only products that cost points
+        }
+      }
     });
-
-    const membershipData = [
-      { name: 'Bronze', value: 0, color: '#92400e' },   // < 100 points
-      { name: 'Silver', value: 0, color: '#9ca3af' },  // 100-499 points
-      { name: 'Gold', value: 0, color: '#eab308' },    // 500-999 points
-      { name: 'Platinum', value: 0, color: '#cbd5e1' }, // 1000+ points
-    ];
-
-    customers.forEach(customer => {
-      const points = customer.total_poin || 0;
-      if (points >= 1000) membershipData[3].value++;
-      else if (points >= 500) membershipData[2].value++;
-      else if (points >= 100) membershipData[1].value++;
-      else membershipData[0].value++;
-    });
-
-    // --- 3. Process Data for Frontend ---
-
-    // Calculate Total Revenue
-    const totalRevenue = salesReports.reduce((acc, report) => {
-      // Ensure total_penjualan is treated as a number
-      const sales = Number(report.total_penjualan) || 0;
-      return acc + sales;
+    
+    const totalPointsRedeemed = pointsTransactions.reduce((acc, curr) => {
+      const points = curr.produk?.poin_pertukaran || 0;
+      const qty = curr.quantity || 0;
+      return acc + (points * qty);
     }, 0);
 
-    // Format sales data for charts
-    const salesData = salesReports.map(report => ({
-      month: new Date(report.tgl_laporan!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      sales: Number(report.total_penjualan) || 0,
-      // You could add more data here if needed
+
+    // --- 2. Line Chart: Daily Transactions (Last 7 Days) ---
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const recentTransactions = await prisma.transaksi.findMany({
+      where: {
+        tanggal_transaksi: { gte: sevenDaysAgo }
+      },
+      orderBy: { tanggal_transaksi: 'asc' }
+    });
+
+    const dailyMap = new Map<string, number>();
+    recentTransactions.forEach(t => {
+      if (t.tanggal_transaksi) {
+        const day = new Date(t.tanggal_transaksi).toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+        dailyMap.set(day, (dailyMap.get(day) || 0) + 1);
+      }
+    });
+
+    const lineChartData = Array.from(dailyMap.entries()).map(([name, value]) => ({
+      name,
+      transactions: value,
     }));
 
-    // Build stats object
-    // Note: 'Points Redeemed' and 'Active Promotions' would require more tables (e.g., 'promosi')
-    // I've substituted them with 'Total Laporan' for this example.
-    const stats = [
-      { title: 'Total Revenue', value: `$${totalRevenue.toLocaleString()}`, icon: 'DollarSign' },
-      { title: 'Total Customers', value: totalCustomers.toLocaleString(), icon: 'Users' },
-      { title: 'Total Laporan', value: salesReports.length, icon: 'Gift' }, // Replaced 'Points Redeemed'
-      { title: 'Date Range', value: `${salesReports.length > 0 ? salesReports.length : 'N/A'} days`, icon: 'TrendingUp' }, // Replaced 'Active Promotions'
-    ];
 
-    // --- 4. Return Response ---
+    // --- 3. Bar Chart: Monthly Revenue (Current Year) ---
+    const currentYear = new Date().getFullYear();
+    const startOfYear = new Date(currentYear, 0, 1);
+    const endOfYear = new Date(currentYear, 11, 31);
+
+    const yearlyTransactions = await prisma.transaksi.findMany({
+      where: {
+        tanggal_transaksi: {
+          gte: startOfYear,
+          lte: endOfYear
+        }
+      }
+    });
+
+    const monthlyMap = new Map<string, number>();
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    monthNames.forEach(m => monthlyMap.set(m, 0)); // Init 0
+
+    yearlyTransactions.forEach(t => {
+      if (t.tanggal_transaksi && t.total_harga) {
+        const monthIndex = new Date(t.tanggal_transaksi).getMonth();
+        const monthName = monthNames[monthIndex];
+        const amount = Number(t.total_harga);
+        monthlyMap.set(monthName, (monthlyMap.get(monthName) || 0) + amount);
+      }
+    });
+
+    const barChartData = Array.from(monthlyMap.entries()).map(([month, sales]) => ({
+      month,
+      sales
+    }));
+
+
+    // --- 4. Pie Chart: Membership Distribution ---
+    const membershipGroups = await prisma.pelanggan.groupBy({
+      by: ['tier_membership'],
+      _count: {
+        tier_membership: true
+      }
+    });
+
+    const pieChartData = membershipGroups.map(group => ({
+      name: group.tier_membership || 'No Tier',
+      value: group._count.tier_membership
+    }));
+
+
+    // --- Return Data Matching Frontend Interface ---
     return NextResponse.json({
-      stats,
-      salesData,
-      membershipData,
+      summary: {
+        revenue: Number(totalRevenueAgg._sum.total_harga) || 0,
+        customers: totalCustomers,
+        pointsRedeemed: totalPointsRedeemed,
+        activePromotions: totalPromotions
+      },
+      lineChartData,
+      barChartData,
+      pieChartData
     });
 
   } catch (e: any) {
-    console.error('GET Reports Error:', e);
+    console.error("Reports API Error:", e);
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }

@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
-import { Textarea } from '@/app/components/ui/textarea'; // Assuming you have this
+import { Textarea } from '@/app/components/ui/textarea';
 import { toast } from 'sonner';
+import { Search, Upload } from 'lucide-react'; // Added Upload
 
-// --- Types based on your schema/api ---
-
-// For the main table, from GET /api/notifikasi
+// --- Types ---
 interface Notifikasi {
   id_pesan: number;
   id_pelanggan: number | null;
@@ -18,24 +17,21 @@ interface Notifikasi {
   } | null;
 }
 
-// For the dropdown in the modal
 interface Pelanggan {
   id_pelanggan: number;
   nama_pelanggan: string | null;
 }
 
-// For the modal form
 interface NotifikasiFormData {
-  id_pelanggan: string; // Use string to hold the value from dropdown
+  id_pelanggan: string;
   pesan: string;
 }
 
 const initialFormData: NotifikasiFormData = {
-  id_pelanggan: "", // "" will mean 'null' (Broadcast to All)
+  id_pelanggan: "",
   pesan: '',
 };
 
-// --- Debounce Hook (unchanged) ---
 function useDebounce(value: string, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -51,11 +47,11 @@ function useDebounce(value: string, delay: number) {
   return debouncedValue;
 }
 
-// --- Main Page Component ---
 export default function NotifikasiPage() {
   const [notifikasiList, setNotifikasiList] = useState<Notifikasi[]>([]);
   const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
   const [loading, setLoading] = useState(true);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   
@@ -65,9 +61,16 @@ export default function NotifikasiPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // --- API Functions ---
+  // File Input Ref for Import
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch all notifications
+  const modalTitle = useMemo(() => 
+    currentNotifikasi ? 'Edit Notifikasi' : 'Tambah Notifikasi Baru',
+    [currentNotifikasi]
+  );
+
+  // --- Data Fetching ---
+
   const fetchNotifikasi = async (search = '') => {
     try {
       setLoading(true);
@@ -91,34 +94,94 @@ export default function NotifikasiPage() {
     }
   };
 
-  // Fetch all customers (for the modal dropdown)
   const fetchPelanggan = async () => {
     try {
-      // Assuming you have an API route for customers
       const response = await fetch('/api/pelanggan'); 
       const result = await response.json();
-      if (response.ok) {
-        setPelangganList(result);
-      } else {
-        toast.error(result.error || 'Failed to fetch customers for dropdown');
-      }
+      if (response.ok && result.data) {
+        setPelangganList(result.data);
+      } 
     } catch (error) {
-      toast.error('Error fetching customers');
-      console.error(error);
+      console.error('Error fetching customers for dropdown', error);
     }
   };
 
-  // Initial data load
   useEffect(() => {
     fetchNotifikasi(debouncedSearchQuery);
   }, [debouncedSearchQuery]);
 
   useEffect(() => {
-    // Fetch customer list only when modal is about to open, or on page load
     fetchPelanggan();
   }, []);
 
-  // --- Modal and Form Handlers ---
+  // --- CSV Import Handler ---
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      // CSV Logic: Expects "Customer ID, Message"
+      // If Customer ID is empty, it's treated as null (Broadcast)
+      const lines = text.split('\n');
+      const importData = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Skip header row
+        if (i === 0 && (line.toLowerCase().includes('message') || line.toLowerCase().includes('pesan'))) {
+          continue;
+        }
+
+        const parts = line.split(',');
+        // We need at least the Message (2nd column)
+        if (parts.length >= 2) {
+          const idStr = parts[0].trim();
+          const messageStr = parts.slice(1).join(',').trim(); // Join rest in case message has commas
+
+          importData.push({
+            id_pelanggan: idStr ? parseInt(idStr) : null,
+            pesan: messageStr
+          });
+        }
+      }
+
+      if (importData.length === 0) {
+        toast.error("File CSV kosong atau format salah. Gunakan: ID Pelanggan (Opsional), Pesan");
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/notifikasi/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importData),
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+          toast.success(result.message);
+          fetchNotifikasi(debouncedSearchQuery);
+        } else {
+          toast.error(result.error || "Gagal import data");
+        }
+      } catch (error) {
+        console.error(error);
+        toast.error("Terjadi kesalahan saat import");
+      }
+    };
+
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // --- Standard Handlers ---
 
   const handleInputChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -159,7 +222,6 @@ export default function NotifikasiPage() {
 
     const payload = {
       ...formData,
-      // Convert id_pelanggan string to number, or null if it's ""
       id_pelanggan: formData.id_pelanggan ? parseInt(formData.id_pelanggan) : null,
       id_pesan: currentNotifikasi?.id_pesan,
     };
@@ -195,7 +257,6 @@ export default function NotifikasiPage() {
 
     setDeletingId(notifikasi.id_pesan);
     try {
-      // API expects id_pesan in the URL query
       const response = await fetch(`/api/notifikasi?id_pesan=${notifikasi.id_pesan}`, {
         method: 'DELETE',
       });
@@ -216,11 +277,8 @@ export default function NotifikasiPage() {
     }
   };
 
-  // --- Render ---
   return (
-    // Body color matching the image
     <div className="min-h-screen bg-[#78a890]">
-
       <div className="max-w-7xl mx-auto px-8 py-6">
         
         {/* Title and Action Buttons Row */}
@@ -235,13 +293,27 @@ export default function NotifikasiPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 pr-4 py-2 w-56 bg-white/90 border-none rounded text-sm placeholder-gray-600"
               />
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
             </div>
+
+            {/* Import Button */}
+            <input 
+              type="file" 
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-gray-700 hover:bg-gray-900 text-white px-5 py-2 rounded text-sm font-medium shadow-md flex items-center gap-2"
+            >
+              <Upload size={16} />
+              Import CSV
+            </Button>
+
             <Button
               onClick={openModalForAdd}
-              // Using a blue color from the customer page for consistency
               className="bg-[#4a9fd9] hover:bg-[#3a8fc9] text-white px-5 py-2 rounded text-sm font-medium shadow-md"
             >
               + Tambah Notifikasi
@@ -316,10 +388,10 @@ export default function NotifikasiPage() {
             <div className="flex items-center justify-center min-h-screen p-4 bg-black bg-opacity-60">
               <div className="relative bg-white rounded-lg shadow-2xl transform transition-all w-full max-w-md">
                 
-                {/* Modal Header (styling from image) */}
+                {/* Modal Header */}
                 <div className="bg-[#4a9b88] text-white px-6 py-4 rounded-t-lg flex justify-between items-center">
                   <h3 className="text-lg font-semibold">
-                    {currentNotifikasi ? 'Edit Notifikasi' : 'Tambah Notifikasi Baru'}
+                    {modalTitle}
                   </h3>
                   <button 
                     onClick={closeModal}
@@ -360,7 +432,6 @@ export default function NotifikasiPage() {
                         <label htmlFor="pesan" className="block text-sm font-medium text-gray-700 mb-1">
                           Pesan <span className="text-red-500">*</span>
                         </label>
-                        {/* Assuming you have a Textarea component, or replace with <textarea> */}
                         <Textarea
                           name="pesan"
                           id="pesan"
@@ -375,7 +446,7 @@ export default function NotifikasiPage() {
                     </div>
                   </div>
 
-                  {/* Modal Footer (styling from image) */}
+                  {/* Modal Footer */}
                   <div className="bg-gray-100 px-6 py-4 rounded-b-lg flex justify-end gap-3">
                     <Button
                       type="button"
@@ -402,4 +473,3 @@ export default function NotifikasiPage() {
     </div>
   );
 }
-

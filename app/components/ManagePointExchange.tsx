@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
-import { Search } from 'lucide-react';
+import { Search, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Type based on your prisma schema 'poin' model
@@ -60,6 +60,9 @@ export default function ManagePointExchange() {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
+  // File Input Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // --- API Functions ---
 
   const fetchRewards = async (search = '') => {
@@ -88,6 +91,74 @@ export default function ManagePointExchange() {
   useEffect(() => {
     fetchRewards(debouncedSearchQuery);
   }, [debouncedSearchQuery]);
+
+  // --- CSV Import Handler ---
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      // Simple CSV Parsing Logic
+      // Assumes format: Nama Reward, Points, Stok
+      const lines = text.split('\n');
+      const importData = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Skip header row if it contains "nama" or "points"
+        if (i === 0 && (line.toLowerCase().includes('nama') || line.toLowerCase().includes('points'))) {
+          continue;
+        }
+
+        const parts = line.split(',');
+        if (parts.length >= 3) {
+          importData.push({
+            nama_reward: parts[0].trim(),
+            points_required: parseInt(parts[1].trim()) || 0,
+            stok: parseInt(parts[2].trim()) || 0
+          });
+        }
+      }
+
+      if (importData.length === 0) {
+        toast.error("File CSV kosong atau format salah. Gunakan: Nama, Points, Stok");
+        return;
+      }
+
+      // Send to Import API
+      try {
+        const response = await fetch('/api/points/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importData),
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+          toast.success(result.message);
+          fetchRewards(debouncedSearchQuery);
+        } else {
+          toast.error(result.error || "Gagal import data");
+        }
+      } catch (error) {
+        console.error(error);
+        toast.error("Terjadi kesalahan saat import");
+      }
+    };
+
+    reader.readAsText(file);
+    // Reset input so the same file can be selected again if needed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // --- Handlers ---
 
@@ -189,6 +260,17 @@ export default function ManagePointExchange() {
 
   return (
     <div className="min-h-screen bg-[#78a890]">
+      {/* Top Navigation Bar */}
+      <div className="bg-[#4a9b88] text-white">
+        <nav className="max-w-7xl mx-auto px-8 flex">
+          <a href="/pelanggan" className="px-4 py-3 text-sm font-medium text-gray-200 hover:bg-black/10">Pelanggan</a>
+          <a href="/membership" className="px-4 py-3 text-sm font-medium text-gray-200 hover:bg-black/10">Membership</a>
+          <a href="/points" className="px-4 py-3 text-sm font-medium bg-black/20 text-white rounded-t-md">Points</a>
+          <a href="/laporan" className="px-4 py-3 text-sm font-medium text-gray-200 hover:bg-black/10">Laporan</a>
+          <a href="/notifikasi" className="px-4 py-3 text-sm font-medium text-gray-200 hover:bg-black/10">Notifikasi</a>
+        </nav>
+      </div>
+
       <div className="max-w-7xl mx-auto px-8 py-6">
         
         {/* Title and Action Buttons Row */}
@@ -205,6 +287,23 @@ export default function ManagePointExchange() {
               />
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
             </div>
+
+            {/* Import Button and Hidden Input */}
+            <input 
+              type="file" 
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-gray-700 hover:bg-gray-900 text-white px-5 py-2 rounded text-sm font-medium shadow-md flex items-center gap-2"
+            >
+              <Upload size={16} />
+              Import CSV
+            </Button>
+
             <Button
               onClick={openModalForAdd}
               className="bg-[#4a9fd9] hover:bg-[#3a8fc9] text-white px-5 py-2 rounded text-sm font-medium shadow-md"
