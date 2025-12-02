@@ -35,7 +35,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 
-
+  // SCENARIO 3: User is logged in and accessing a protected page -> ALLOW
   return NextResponse.next();
 }
 
