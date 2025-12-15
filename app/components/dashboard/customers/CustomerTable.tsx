@@ -1,6 +1,6 @@
 "use client"
 
-import { Customer } from '../../../lib/types';
+import { Customer } from '@/lib/types';
 
 interface CustomerTableProps {
   customers: Customer[];
