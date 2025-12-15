@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Transform to match frontend format
-    const transformedCustomers = customers.map(customer => ({
+    const transformedCustomers = customers.map((customer: any) => ({
       id: customer.id_pelanggan,
       name: customer.nama_pelanggan || '',
       email: customer.email_pelanggan || '',
