@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect } from 'react'; // 1. Add useEffect here
-import { useRouter, useSearchParams } from 'next/navigation'; // 2. Add useSearchParams here
+import { useState, useEffect, Suspense } from 'react'; // 1. Tambah Suspense
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { toast } from 'sonner'; // 3. Add toast here
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { toast } from 'sonner';
+import { Button } from '../../components/ui/button'; // Gunakan @ jika sudah diperbaiki
+import { Input } from '../../components/ui/input';   // Gunakan @ jika sudah diperbaiki
 
-
-export default function LoginPage() {
+// 2. Ubah nama fungsi ini jadi LoginForm (Hapus 'export default')
+function LoginForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
@@ -18,13 +18,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (searchParams.get('logout') === 'success') {
-      // Show the notification
       toast.success("Logout berhasil! Sampai jumpa lagi.");
-
       const timer = setTimeout(() => {
+        // Hapus query param agar toast tidak muncul terus saat refresh (opsional)
         router.replace('/auth/login');
       }, 2000);
-
       return () => clearTimeout(timer);
     }
   }, [searchParams, router]);
@@ -52,8 +50,8 @@ export default function LoginPage() {
       }
 
       setMsg(data.message || 'Login berhasil');
-
       router.push('/auth/dashboard/customers');
+      router.refresh(); 
     } catch (err: any) {
       setMsg(err?.message ?? 'Server error');
     } finally {
@@ -70,7 +68,7 @@ export default function LoginPage() {
             Enter your credentials to access the management dashboard
           </p>
         </div>
-
+        
         <div className="bg-[#7db5a3] px-8 py-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -87,7 +85,7 @@ export default function LoginPage() {
                 className="w-full bg-white border-none text-gray-900 placeholder:text-gray-400"
               />
             </div>
-
+            
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white mb-2">
                 Password
@@ -103,8 +101,8 @@ export default function LoginPage() {
               />
             </div>
 
-            <Button
-              type="submit"
+            <Button 
+              type="submit" 
               className="w-full bg-[#2d2d2d] hover:bg-[#1d1d1d] text-white font-medium py-3 rounded"
               disabled={loading}
             >
@@ -124,7 +122,7 @@ export default function LoginPage() {
             <span className="text-white">
               Belum memiliki akun?
             </span>
-            <Link
+            <Link 
               href="/auth/register"
               className="text-white hover:underline font-semibold"
             >
@@ -134,5 +132,15 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 3. Buat Export Default Baru dengan Suspense
+export default function LoginPage() {
+  return (
+    // Fallback bisa berupa loading spinner sederhana atau null
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#2d2d2d] text-white">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }
