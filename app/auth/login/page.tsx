@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react'; // 1. Add useEffect here
+import { useRouter, useSearchParams } from 'next/navigation'; // 2. Add useSearchParams here
 import Link from 'next/link';
+import { toast } from 'sonner'; // 3. Add toast here
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 
@@ -16,6 +17,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('logout') === 'success') {
+      // Show the notification
+      toast.success("Logout berhasil! Sampai jumpa lagi.");
+      
+      const timer = setTimeout(() => {
+      router.replace('/auth/login');
+    }, 2000);
+
+    return () => clearTimeout(timer);
+    }
+  }, [searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

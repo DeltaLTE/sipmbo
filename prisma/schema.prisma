@@ -37,7 +37,7 @@ model owner {
 model pelanggan {
   id_pelanggan         Int          @id @default(autoincrement())
   nama_pelanggan       String?      @db.VarChar(50)
-  email_pelanggan      String?      @db.VarChar(50)
+  email_pelanggan      String       @unique(map: "unique_email") @db.VarChar(50)
   no_telepon_pelanggan String?      @db.VarChar(14)
   tier_membership      String?      @db.VarChar(15)
   total_poin           Int?
@@ -96,4 +96,13 @@ model poin {
   nama_reward     String? @db.VarChar(50)
   points_required Int?    @map("points required")
   stok            Int?
+}
+
+model import_history {
+  id       Int       @id @default(autoincrement())
+  type     String?   @db.VarChar(50)
+  filename String?   @db.VarChar(100)
+  count    Int?
+  status   String?   @db.VarChar(20)
+  createAt DateTime? @db.DateTime(0)
 }

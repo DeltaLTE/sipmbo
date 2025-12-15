@@ -24,12 +24,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const handleLogout = async () => {
     try {
       // 1. Call the logout API to clear the cookie on the server
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/logout', { method: 'POST' });
       
       // 2. Force a hard navigation to the login page.
       // This bypasses the client-side router cache and ensures the 
       // middleware sees the request as a fresh, unauthenticated visitor.
-      window.location.href = '/auth/login'; 
+      window.location.href = '/auth/login?logout=success'; 
       
     } catch (error) {
       console.error('Logout failed', error);

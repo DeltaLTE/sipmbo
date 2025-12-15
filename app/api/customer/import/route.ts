@@ -6,30 +6,32 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     if (!Array.isArray(body) || body.length === 0) {
-      return NextResponse.json(
-        { error: "Data import harus berupa array dan tidak boleh kosong" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Data import kosong" }, { status: 400 });
     }
 
-    // Use createMany to insert multiple customers
+    // STRICT VALIDATION: Check every row
+    const isValid = body.every((item: any) => item.name && item.email);
+
+    if (!isValid) {
+      await prisma.import_history.create({ data: { type: "Pelanggan", count: 0, status: "Failed", filename: "Invalid Data" } });
+      return NextResponse.json({ error: "Data tidak valid. Nama dan Email wajib diisi." }, { status: 400 });
+    }
+
     const result = await prisma.pelanggan.createMany({
       data: body.map((item: any) => ({
-        // Map the JSON fields to your Prisma schema fields
         nama_pelanggan: item.name,
         email_pelanggan: item.email,
-        no_telepon_pelanggan: item.phone,
+        no_telepon_pelanggan: item.phone || '',
         total_poin: parseInt(item.points, 10) || 0
       })),
-      skipDuplicates: true, // Skip if email/phone causes unique constraint violation
+      skipDuplicates: true,
     });
 
-    return NextResponse.json(
-      { message: `Berhasil mengimport ${result.count} pelanggan`, count: result.count },
-      { status: 201 }
-    );
+    await prisma.import_history.create({ data: { type: "Pelanggan", count: result.count, status: "Success", filename: "CSV Import" } });
+
+    return NextResponse.json({ message: `Success: ${result.count} imported`, count: result.count }, { status: 201 });
   } catch (e: any) {
-    console.error("Import error:", e);
+    await prisma.import_history.create({ data: { type: "Pelanggan", count: 0, status: "Failed", filename: "Server Error" } });
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
