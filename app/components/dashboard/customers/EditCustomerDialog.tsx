@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { DialogActions } from '../shared/DialogActions';
-import { Customer } from '../../../lib/types';
+import { Customer } from '@/lib/types';
 
 interface EditCustomerDialogProps {
   open: boolean;
