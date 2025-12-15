@@ -6,7 +6,7 @@ import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { DialogActions } from '../shared/DialogActions';
-import { Promotion } from '../../../lib/types';
+import { Promotion } from '@/lib/types';
 
 interface PromotionDialogsProps {
   viewDialogOpen: boolean;

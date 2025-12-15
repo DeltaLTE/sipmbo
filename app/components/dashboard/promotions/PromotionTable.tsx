@@ -1,6 +1,6 @@
 "use client"
 
-import { Promotion } from '../../../lib/types';
+import { Promotion } from '@/lib/types';
 import { Badge } from '../../ui/badge';
 
 interface PromotionTableProps {
