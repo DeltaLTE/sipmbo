@@ -7,11 +7,8 @@ import { toast } from 'sonner'; // 3. Add toast here
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 
-interface LoginPageProps {
-  onLogin?: () => void;
-}
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
@@ -23,12 +20,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     if (searchParams.get('logout') === 'success') {
       // Show the notification
       toast.success("Logout berhasil! Sampai jumpa lagi.");
-      
-      const timer = setTimeout(() => {
-      router.replace('/auth/login');
-    }, 2000);
 
-    return () => clearTimeout(timer);
+      const timer = setTimeout(() => {
+        router.replace('/auth/login');
+      }, 2000);
+
+      return () => clearTimeout(timer);
     }
   }, [searchParams, router]);
 
@@ -55,12 +52,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       }
 
       setMsg(data.message || 'Login berhasil');
-      
-      if (onLogin) {
-        onLogin();
-      } else {
-        router.push('/auth/dashboard/customers');
-      }
+
+      router.push('/auth/dashboard/customers');
     } catch (err: any) {
       setMsg(err?.message ?? 'Server error');
     } finally {
@@ -77,7 +70,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             Enter your credentials to access the management dashboard
           </p>
         </div>
-        
+
         <div className="bg-[#7db5a3] px-8 py-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -94,7 +87,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 className="w-full bg-white border-none text-gray-900 placeholder:text-gray-400"
               />
             </div>
-            
+
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white mb-2">
                 Password
@@ -110,8 +103,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               />
             </div>
 
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full bg-[#2d2d2d] hover:bg-[#1d1d1d] text-white font-medium py-3 rounded"
               disabled={loading}
             >
@@ -131,7 +124,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <span className="text-white">
               Belum memiliki akun?
             </span>
-            <Link 
+            <Link
               href="/auth/register"
               className="text-white hover:underline font-semibold"
             >
