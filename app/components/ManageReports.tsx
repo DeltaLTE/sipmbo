@@ -298,7 +298,6 @@ export default function ManageReports() {
 
   // Delete Transaction
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Hapus transaksi ini?")) return;
     try {
       const res = await fetch(`/api/transactions?id=${id}`, { method: 'DELETE' });
       if (res.ok) {

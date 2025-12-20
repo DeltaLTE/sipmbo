@@ -259,10 +259,6 @@ export default function CustomersPage() {
   };
 
   const handleDelete = async (customer: Customer) => {
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus ${customer.name}?`)) {
-      return;
-    }
-
     setDeletingId(customer.id);
     try {
       const response = await fetch(`/api/customer?id=${customer.id}`, {

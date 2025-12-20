@@ -16,9 +16,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const menuItems = [
     { id: 'customers', label: 'Pelanggan', href: '/auth/dashboard/customers' },
     { id: 'membership', label: 'Membership', href: '/auth/dashboard/membership' },
+    { id: 'point', label: 'Point', href: '/auth/dashboard/points' },
     { id: 'products', label: 'Produk', href: '/auth/dashboard/products' },
-    { id: 'reports', label: 'Laporan', href: '/auth/dashboard/reports' },
     { id: 'notifications', label: 'Notifikasi', href: '/auth/dashboard/promotions' },
+    { id: 'reports', label: 'Laporan', href: '/auth/dashboard/reports' },
+    
   ];
 
   const handleLogout = async () => {

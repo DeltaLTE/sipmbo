@@ -134,7 +134,6 @@ export default function NotifikasiPage() {
   };
 
   const handleDelete = async (notifikasi: Notifikasi) => {
-    if (!window.confirm(`Hapus notifikasi ini?`)) return;
     setDeletingId(notifikasi.id_pesan);
     try {
       const response = await fetch(`/api/notifikasi?id_pesan=${notifikasi.id_pesan}`, { method: 'DELETE' });

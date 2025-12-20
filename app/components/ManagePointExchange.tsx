@@ -218,7 +218,6 @@ export default function ManagePointExchange() {
   };
 
   const handleDelete = async (reward: PointReward) => {
-    if (!window.confirm(`Hapus "${reward.nama_reward}"?`)) return;
     setDeletingId(reward.id_point);
     try {
       const response = await fetch(`/api/points?id=${reward.id_point}`, { method: 'DELETE' });

@@ -150,8 +150,6 @@ export default function ManageMembership() {
 
   const handleDelete = async (tier: MembershipTier) => {
     const tierId = tier.tier_membership;
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus tier "${tierId}"?`)) return;
-
     setDeletingId(tierId);
     try {
       const response = await fetch(`/api/membership?id=${tierId}`, { method: 'DELETE' });

@@ -178,7 +178,6 @@ export default function ProductPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Hapus produk?')) return;
     try {
       const res = await fetch(`/api/products?id=${id}`, { method: 'DELETE' });
       if (res.ok) { toast.success('Deleted'); setProducts(prev => prev.filter(p => p.id !== id)); }
