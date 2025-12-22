@@ -86,34 +86,55 @@ export default function ManagePointExchange() {
       const text = e.target?.result as string;
       if (!text) return;
 
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l); // Remove empty lines
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
       if (lines.length < 2) {
         toast.error("File CSV kosong atau tidak valid.");
         return;
       }
 
       // 1. STRICT HEADER CHECK
-      // Clean up the header row (remove quotes, extra spaces, lowercase it)
-      const headerRow = lines[0].toLowerCase().replace(/"/g, '').replace(/\s+/g, '');
-      const expectedHeader = "namareward,points,stok"; // Normalized expected string
+      // Normalize header: remove quotes, remove spaces, make lowercase
+      const headerRaw = lines[0].toLowerCase().replace(/"/g, '').replace(/\r/g, '');
+      const headers = headerRaw.split(',').map(h => h.trim());
 
-      // We check if the uploaded header contains our expected columns in order
-      if (!headerRow.includes("nama") || !headerRow.includes("points") || !headerRow.includes("stok")) {
-        toast.error("Format CSV Salah! Header harus: Nama Reward, Points, Stok");
-        if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
+      // Define exact expected headers
+      // Ensure your CSV uses: "Nama Reward, Points, Stok"
+      const requiredHeaders = ["nama reward", "points", "stok"];
+
+      // Check if all required headers exist
+      const isValidHeader = requiredHeaders.every(req => headers.includes(req));
+
+      if (!isValidHeader) {
+        toast.error("Format Header Salah! Harap gunakan: Nama Reward, Points, Stok");
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
-      // 2. Parse Data
+      // 2. Parse Data based on index
+      // We map based on index assuming order: Nama, Points, Stok
+      const nameIndex = headers.indexOf("nama reward");
+      const pointsIndex = headers.indexOf("points");
+      const stokIndex = headers.indexOf("stok");
+
       const importData = [];
+      
+      // Start loop from 1 to skip header
       for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(',');
+        const line = lines[i];
+        // Handle split carefully (simple split by comma)
+        const parts = line.split(',');
+
         if (parts.length >= 3) {
-          importData.push({
-            nama_reward: parts[0].trim(),
-            points_required: parseInt(parts[1].trim()) || 0,
-            stok: parseInt(parts[2].trim()) || 0
-          });
+          const rowData = {
+            nama_reward: parts[nameIndex]?.trim().replace(/^"|"$/g, ''), // Clean quotes if present
+            points_required: parseInt(parts[pointsIndex]?.trim()) || 0,
+            stok: parseInt(parts[stokIndex]?.trim()) || 0
+          };
+          
+          // Only add if name exists
+          if (rowData.nama_reward) {
+            importData.push(rowData);
+          }
         }
       }
 
@@ -125,7 +146,9 @@ export default function ManagePointExchange() {
           body: JSON.stringify(importData),
         });
         const result = await response.json();
+        
         if (response.ok) {
+          // Show detailed message (success count + skipped count)
           toast.success(result.message);
           fetchRewards(debouncedSearchQuery);
         } else {
@@ -290,7 +313,7 @@ export default function ManagePointExchange() {
               ) : (
                 rewards.map((reward) => (
                   <tr key={reward.id_point} className="border-b border-gray-200 hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-800">R{reward.id_point}</td>
+                    <td className="px-6 py-4 text-sm text-gray-800">{reward.id_point}</td>
                     <td className="px-6 py-4 text-sm text-gray-800">{reward.nama_reward}</td>
                     <td className="px-6 py-4 text-sm text-gray-800">{reward.points_required}</td>
                     <td className="px-6 py-4 text-sm text-gray-800">{reward.stok}</td>
