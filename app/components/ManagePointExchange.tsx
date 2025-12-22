@@ -76,7 +76,7 @@ export default function ManagePointExchange() {
     fetchRewards(debouncedSearchQuery);
   }, [debouncedSearchQuery]);
 
-  // --- STRICT CSV IMPORT HANDLER ---
+  // --- ROBUST CSV IMPORT HANDLER ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -92,46 +92,43 @@ export default function ManagePointExchange() {
         return;
       }
 
-      // 1. STRICT HEADER CHECK
-      // Normalize header: remove quotes, remove spaces, make lowercase
-      const headerRaw = lines[0].toLowerCase().replace(/"/g, '').replace(/\r/g, '');
-      const headers = headerRaw.split(',').map(h => h.trim());
+      // 1. FLEXIBLE HEADER CHECK
+      // Clean headers: remove quotes, lowercase, remove ID columns
+      const rawHeaders = lines[0].toLowerCase().split(',');
+      
+      // Helper to find index of a column regardless of naming (e.g. "nama_reward" vs "nama reward")
+      const findIndex = (keywords: string[]) => {
+        return rawHeaders.findIndex(h => {
+          const cleanH = h.replace(/["\r_]/g, ' ').trim(); // treat underscores as spaces
+          return keywords.some(k => cleanH.includes(k));
+        });
+      };
 
-      // Define exact expected headers
-      // Ensure your CSV uses: "Nama Reward, Points, Stok"
-      const requiredHeaders = ["nama reward", "points", "stok"];
+      const nameIndex = findIndex(["nama", "reward"]);
+      const pointsIndex = findIndex(["point", "required"]);
+      const stokIndex = findIndex(["stok", "stock", "qty"]);
 
-      // Check if all required headers exist
-      const isValidHeader = requiredHeaders.every(req => headers.includes(req));
-
-      if (!isValidHeader) {
-        toast.error("Format Header Salah! Harap gunakan: Nama Reward, Points, Stok");
+      if (nameIndex === -1 || pointsIndex === -1 || stokIndex === -1) {
+        toast.error("Header CSV tidak dikenali. Pastikan ada kolom: Nama Reward, Points, Stok");
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
-      // 2. Parse Data based on index
-      // We map based on index assuming order: Nama, Points, Stok
-      const nameIndex = headers.indexOf("nama reward");
-      const pointsIndex = headers.indexOf("points");
-      const stokIndex = headers.indexOf("stok");
-
+      // 2. Parse Data
       const importData = [];
       
-      // Start loop from 1 to skip header
       for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        // Handle split carefully (simple split by comma)
-        const parts = line.split(',');
+        // Handle rows with commas inside quotes (basic regex split)
+        // Or simple split if complex parsing isn't needed
+        const parts = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); 
 
-        if (parts.length >= 3) {
+        if (parts.length > Math.max(nameIndex, pointsIndex, stokIndex)) {
           const rowData = {
-            nama_reward: parts[nameIndex]?.trim().replace(/^"|"$/g, ''), // Clean quotes if present
-            points_required: parseInt(parts[pointsIndex]?.trim()) || 0,
-            stok: parseInt(parts[stokIndex]?.trim()) || 0
+            nama_reward: parts[nameIndex]?.replace(/^"|"$/g, '').trim(),
+            points_required: parseInt(parts[pointsIndex]?.replace(/[^0-9]/g, '') || '0'), // Remove non-numeric chars
+            stok: parseInt(parts[stokIndex]?.replace(/[^0-9]/g, '') || '0')
           };
           
-          // Only add if name exists
           if (rowData.nama_reward) {
             importData.push(rowData);
           }
@@ -139,23 +136,32 @@ export default function ManagePointExchange() {
       }
 
       // 3. Send to API
+      // NOTE: I changed the URL to '/api/points' (standard method) 
+      // If your file is definitely in /api/points/import/route.ts, change it back.
       try {
-        const response = await fetch('/api/points/import', {
+        const response = await fetch('/api/points/import', { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(importData),
         });
+        
         const result = await response.json();
         
         if (response.ok) {
-          // Show detailed message (success count + skipped count)
-          toast.success(result.message);
+          toast.success(`Berhasil! ${result.count || result.inserted || 0} data masuk.`);
           fetchRewards(debouncedSearchQuery);
         } else {
-          toast.error(result.error || "Gagal import data");
+          // Check for detailed error list
+          if (result.failedDetails) {
+             console.table(result.failedDetails); // Show details in console
+             toast.warning(`Import sebagian. ${result.failed} gagal (Cek Console).`);
+          } else {
+             toast.error(result.error || "Gagal import data");
+          }
         }
       } catch (error) {
-        toast.error("Terjadi kesalahan saat import");
+        console.error(error);
+        toast.error("Terjadi kesalahan koneksi saat import");
       }
     };
     reader.readAsText(file);

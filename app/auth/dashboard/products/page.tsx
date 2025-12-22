@@ -60,7 +60,7 @@ export default function ProductPage() {
 
   useEffect(() => { fetchProducts(debouncedSearchTerm); }, [debouncedSearchTerm]);
 
-  // --- STRICT CSV IMPORT ---
+  // --- ROBUST CSV IMPORT HANDLER (Replaces existing handleFileUpload) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -71,56 +71,86 @@ export default function ProductPage() {
       if (!text) return;
 
       const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-      if (lines.length < 2) return toast.error("File CSV kosong.");
+      if (lines.length < 2) {
+        toast.error("File CSV kosong.");
+        return;
+      }
 
-      // CHECK HEADER
-      const header = lines[0].toLowerCase();
-      if (!header.includes("name") || !header.includes("category") || !header.includes("price")) {
-        toast.error("Format CSV Salah! Header: Name, Category, Notes, Points, Price");
+      // 1. FLEXIBLE HEADER DETECTION
+      const rawHeaders = lines[0].toLowerCase().split(',');
+
+      const findIndex = (keywords: string[]) => {
+        return rawHeaders.findIndex(h => {
+          const cleanH = h.replace(/["\r_]/g, ' ').trim();
+          return keywords.some(k => cleanH.includes(k));
+        });
+      };
+
+      // Map columns regardless of language (Bahasa vs English)
+      const nameIndex = findIndex(["nama", "name", "product"]);
+      const catIndex = findIndex(["kategori", "category"]);
+      const priceIndex = findIndex(["harga", "price", "cost"]);
+      const pointIndex = findIndex(["poin", "point"]);
+      const noteIndex = findIndex(["catatan", "note", "desc"]);
+
+      // Validate essential columns
+      if (nameIndex === -1 || catIndex === -1) {
+        toast.error("Format CSV tidak dikenali. Pastikan ada kolom: Nama Produk, Kategori");
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
+      // 2. PARSE DATA
       const importData = [];
       for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(',');
-        if (parts.length >= 5) {
+        // Handle commas inside quotes logic or simple split
+        const parts = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); 
+        
+        // Ensure row has enough columns based on the max index we found
+        const maxIndex = Math.max(nameIndex, catIndex, priceIndex, pointIndex);
+        
+        if (parts.length > maxIndex) {
+          const clean = (val: string) => val ? val.replace(/^"|"$/g, '').trim() : '';
+
           importData.push({
-            name: parts[0].trim(),
-            category: parts[1].trim(),
-            notes: parts[2].trim(),
-            points: parseInt(parts[3].trim()) || 0,
-            price: parseFloat(parts[4].trim()) || 0
+            name: clean(parts[nameIndex]),
+            category: clean(parts[catIndex]),
+            // Use fallback if optional columns are missing
+            notes: noteIndex !== -1 ? clean(parts[noteIndex]) : '',
+            points: pointIndex !== -1 ? parseInt(clean(parts[pointIndex]).replace(/[^0-9]/g, '') || '0') : 0,
+            price: priceIndex !== -1 ? parseFloat(clean(parts[priceIndex]).replace(/[^0-9.]/g, '') || '0') : 0
           });
         }
       }
 
+      // 3. SEND TO API
       try {
-        const response = await fetch('/api/products/import', {
+        const response = await fetch('/api/products/import', { // Ensure this matches your folder structure
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(importData),
         });
         const result = await response.json();
+        
         if (response.ok) {
           toast.success(result.message);
           fetchProducts(debouncedSearchTerm);
         } else {
-          toast.error(result.error);
+          // Handle detailed error report if available
+          if (result.failedDetails) {
+            console.table(result.failedDetails);
+            toast.warning(`Import sebagian. ${result.failed} data gagal (Cek Console).`);
+          } else {
+            toast.error(result.error || "Gagal import");
+          }
         }
-      } catch (error) { toast.error("Error importing"); }
+      } catch (error) {
+        console.error(error);
+        toast.error("Terjadi kesalahan sistem saat import");
+      }
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleDownloadTemplate = () => {
-    const csvContent = "Name,Category,Notes,Points,Price\nLatte,Coffee,Hot,20,25000";
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "products_template.csv";
-    link.click();
   };
 
   // --- Handlers ---
@@ -194,7 +224,6 @@ export default function ProductPage() {
             <Input placeholder="Search" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 w-56" />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           </div>
-          <Button onClick={handleDownloadTemplate} className="bg-white text-gray-700"><Download size={16} /></Button>
           <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
           <Button onClick={() => fileInputRef.current?.click()} className="bg-gray-700 text-white flex gap-2"><Upload size={16} /> Import CSV</Button>
           <Button onClick={openModalForAdd} className="bg-[#4a9fd9] text-white">+ Tambah Produk</Button>

@@ -3,95 +3,79 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const rawBody = await req.json();
 
-    if (!Array.isArray(body) || body.length === 0) {
-      return NextResponse.json({ error: "Data import harus array dan tidak boleh kosong" }, { status: 400 });
+    // 1. Basic Array Check
+    if (!Array.isArray(rawBody) || rawBody.length === 0) {
+      return NextResponse.json({ error: "Data is empty or not an array" }, { status: 400 });
     }
 
-    // --- 1. STRICT DATA VALIDATION ---
-    const isValid = body.every((item: any) => 
-      item.nama_reward && 
-      typeof item.nama_reward === 'string' &&
-      item.nama_reward.trim() !== "" && 
-      item.points_required !== undefined &&
-      item.stok !== undefined
-    );
+    const successfulRows = [];
+    const failedRows = [];
 
-    if (!isValid) {
-      await prisma.import_history.create({
-        data: { type: "Points", count: 0, status: "Failed", filename: "Invalid Data Structure" }
-      });
-      return NextResponse.json({ error: "Format data salah. Pastikan kolom Nama, Points, dan Stok valid." }, { status: 400 });
-    }
-
-    // --- 2. DUPLICATE CHECKING LOGIC ---
-    // Since 'nama_reward' is not unique in the DB schema, 'skipDuplicates' won't work automatically.
-    // We must filter them manually.
-    
-    // Get all new names from the upload
-    const incomingNames = body.map((item: any) => item.nama_reward);
-
-    // Find which of these names already exist in the database
-    const existingRewards = await prisma.poin.findMany({
-      where: {
-        nama_reward: {
-          in: incomingNames
+    // 2. Process Row by Row (Permissive Mode)
+    for (const [index, item] of rawBody.entries()) {
+      // Step A: Flexible Key Finding (Finds 'points' or 'Points Required')
+      // This helper looks for values even if casing is wrong
+      const findVal = (keys: string[]) => {
+        const itemKeys = Object.keys(item).map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        for (const k of keys) {
+            const idx = itemKeys.indexOf(k);
+            if (idx !== -1) return item[Object.keys(item)[idx]];
         }
-      },
-      select: { nama_reward: true }
-    });
+        return undefined;
+      };
 
-    // Create a Set of existing names for fast lookup (normalize to lowercase to prevent 'Payung' vs 'payung')
-    const existingSet = new Set(existingRewards.map(r => r.nama_reward?.toLowerCase()));
+      const nama = findVal(['namareward', 'nama', 'reward', 'name']);
+      const pointsRaw = findVal(['pointsrequired', 'points', 'point', 'required']);
+      const stokRaw = findVal(['stok', 'stock', 'qty', 'quantity']);
 
-    // Filter the body: keep only items where the name is NOT in the existing set
-    const finalDataToInsert = body.filter((item: any) => 
-      !existingSet.has(item.nama_reward.toLowerCase())
-    ).map((item: any) => ({
-      nama_reward: item.nama_reward,
-      points_required: parseInt(item.points_required, 10),
-      stok: parseInt(item.stok, 10)
-    }));
+      // Step B: Skip obviously invalid rows (like empty rows or header rows)
+      if (!nama || nama.toString().toLowerCase().includes("nama_reward")) {
+        failedRows.push({ index, reason: "Empty row or Header row detected", data: item });
+        continue;
+      }
 
-    // --- 3. EXECUTE INSERT ---
-    let resultCount = 0;
-    
-    if (finalDataToInsert.length > 0) {
-      const result = await prisma.poin.createMany({
-        data: finalDataToInsert,
-        // skipDuplicates is kept true just in case, but our manual filter does the heavy lifting
-        skipDuplicates: true, 
+      // Step C: Safe Number Parsing
+      const points = parseInt(pointsRaw, 10);
+      const stok = parseInt(stokRaw, 10);
+
+      if (isNaN(points) || isNaN(stok)) {
+        failedRows.push({ index, reason: "Points or Stok is not a number", data: item });
+        continue;
+      }
+
+      successfulRows.push({
+        nama_reward: String(nama).trim(),
+        points_required: points,
+        stok: stok
       });
-      resultCount = result.count;
     }
 
-    const skippedCount = body.length - finalDataToInsert.length;
+    if (successfulRows.length === 0) {
+      return NextResponse.json({ 
+        error: "No valid rows found to import.", 
+        details: failedRows 
+      }, { status: 400 });
+    }
 
-    // Log History
-    await prisma.import_history.create({
-      data: { 
-        type: "Points", 
-        count: resultCount, 
-        status: "Success", 
-        filename: `CSV Import (${skippedCount} skipped)` 
-      }
+    // 3. Database Insert
+    // We use createMany to insert all good rows at once
+    const result = await prisma.poin.createMany({
+      data: successfulRows,
+      skipDuplicates: true, 
     });
 
-    return NextResponse.json(
-      { 
-        message: `Berhasil import ${resultCount} data. (${skippedCount} data duplikat dilewati).`, 
-        count: resultCount,
-        skipped: skippedCount 
-      },
-      { status: 201 }
-    );
+    // 4. Return Report
+    return NextResponse.json({ 
+      message: "Import processing complete",
+      inserted: result.count,
+      failed: failedRows.length,
+      failedDetails: failedRows // Check this in your Network tab to see what failed!
+    }, { status: 201 });
 
   } catch (e: any) {
-    console.error("Import error:", e);
-    await prisma.import_history.create({
-      data: { type: "Points", count: 0, status: "Failed", filename: "Server Error" }
-    });
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    console.error("Server Error:", e);
+    return NextResponse.json({ error: e.message || "Internal Server Error" }, { status: 500 });
   }
 }

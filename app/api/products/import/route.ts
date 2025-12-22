@@ -4,36 +4,78 @@ import { Decimal } from "@prisma/client/runtime/library";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const rawBody = await req.json();
 
-    if (!Array.isArray(body) || body.length === 0) {
+    if (!Array.isArray(rawBody) || rawBody.length === 0) {
       return NextResponse.json({ error: "Data import kosong" }, { status: 400 });
     }
 
-    // STRICT VALIDATION
-    const isValid = body.every((item: any) => item.name && item.category);
+    const successfulRows = [];
+    const failedRows = [];
 
-    if (!isValid) {
-      await prisma.import_history.create({ data: { type: "Produk", count: 0, status: "Failed", filename: "Invalid Data" } });
-      return NextResponse.json({ error: "Data tidak valid. Nama dan Kategori wajib diisi." }, { status: 400 });
-    }
+    // 1. LOOP & VALIDATE
+    for (const [index, item] of rawBody.entries()) {
+      // Basic Validation
+      if (!item.name || !item.category) {
+        failedRows.push({ index, reason: "Missing Name or Category", data: item });
+        continue;
+      }
 
-    const result = await prisma.produk.createMany({
-      data: body.map((item: any) => ({
+      // Safe Type Conversion
+      // Prisma Decimal needs a string or number, but NOT NaN
+      let priceVal = 0;
+      if (item.price) {
+        const parsed = parseFloat(item.price);
+        priceVal = isNaN(parsed) ? 0 : parsed;
+      }
+
+      let pointVal = 0;
+      if (item.points) {
+         const parsed = parseInt(item.points, 10);
+         pointVal = isNaN(parsed) ? 0 : parsed;
+      }
+
+      successfulRows.push({
         nama_produk: item.name,
         kategori_produk: item.category,
-        catatan_produk: item.notes,
-        poin_pertukaran: parseInt(item.points, 10) || 0,
-        harga_satuan: item.price ? new Decimal(item.price) : null,
-      })),
+        catatan_produk: item.notes || "",
+        poin_pertukaran: pointVal,
+        harga_satuan: new Decimal(priceVal),
+      });
+    }
+
+    if (successfulRows.length === 0) {
+      return NextResponse.json({ 
+        error: "Tidak ada data valid ditemukan.", 
+        failedDetails: failedRows 
+      }, { status: 400 });
+    }
+
+    // 2. INSERT TO DB
+    const result = await prisma.produk.createMany({
+      data: successfulRows,
       skipDuplicates: true, 
     });
 
-    await prisma.import_history.create({ data: { type: "Produk", count: result.count, status: "Success", filename: "CSV Import" } });
+    // Log History
+    await prisma.import_history.create({ 
+      data: { 
+        type: "Produk", 
+        count: result.count, 
+        status: failedRows.length > 0 ? "Partial Success" : "Success", 
+        filename: "CSV Import" 
+      } 
+    });
 
-    return NextResponse.json({ message: `Success: ${result.count} imported`, count: result.count }, { status: 201 });
+    return NextResponse.json({ 
+      message: `Sukses: ${result.count} data masuk.`, 
+      count: result.count,
+      failed: failedRows.length,
+      failedDetails: failedRows
+    }, { status: 201 });
+
   } catch (e: any) {
-    await prisma.import_history.create({ data: { type: "Produk", count: 0, status: "Failed", filename: "Server Error" } });
+    console.error("Product Import Error:", e);
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
